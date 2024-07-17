@@ -81,6 +81,10 @@ public class JfrToFlame extends JfrConverter {
         }
     }
 
+    public FrameTree dumpTree(){
+        return fg.dumpRowTree();
+    }
+
     public static void convert(String input, String output, Arguments args) throws IOException {
         JfrToFlame converter;
         try (JfrReader jfr = new JfrReader(input)) {

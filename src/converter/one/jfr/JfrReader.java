@@ -5,7 +5,14 @@
 
 package one.jfr;
 
-import one.jfr.event.*;
+import one.jfr.event.AllocationSample;
+import one.jfr.event.CPULoad;
+import one.jfr.event.ContendedLock;
+import one.jfr.event.Event;
+import one.jfr.event.ExecutionSample;
+import one.jfr.event.GCHeapSummary;
+import one.jfr.event.LiveObject;
+import one.jfr.event.ObjectCount;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -204,6 +211,7 @@ public class JfrReader implements Closeable {
         int tid = getVarint();
         int stackTraceId = getVarint();
         int threadState = getVarint();
+        int contextId = getVarint();
         return new ExecutionSample(time, tid, stackTraceId, threadState);
     }
 
@@ -214,6 +222,7 @@ public class JfrReader implements Closeable {
         int classId = getVarint();
         long allocationSize = getVarlong();
         long tlabSize = tlab ? getVarlong() : 0;
+        int contextId = getVarint();
         return new AllocationSample(time, tid, stackTraceId, classId, allocationSize, tlabSize);
     }
 
