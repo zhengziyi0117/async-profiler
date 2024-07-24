@@ -5,7 +5,16 @@
 
 package one.jfr;
 
-import one.jfr.event.*;
+import one.jfr.event.AllocationSample;
+import one.jfr.event.CPULoad;
+import one.jfr.event.ContendedLock;
+import one.jfr.event.Event;
+import one.jfr.event.EventPair;
+import one.jfr.event.ExecutionSample;
+import one.jfr.event.GCHeapSummary;
+import one.jfr.event.JfrEventType;
+import one.jfr.event.LiveObject;
+import one.jfr.event.ObjectCount;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -199,11 +208,56 @@ public class JfrReader implements Closeable {
         return null;
     }
 
+    @SuppressWarnings("unchecked")
+    public EventPair readEventWithType() throws IOException {
+        while (ensureBytes(CHUNK_HEADER_SIZE)) {
+            int pos = buf.position();
+            int size = getVarint();
+            int type = getVarint();
+
+            if (type == 'L' && buf.getInt(pos) == CHUNK_SIGNATURE) {
+                if (state != STATE_NEW_CHUNK && stopAtNewChunk) {
+                    buf.position(pos);
+                    state = STATE_NEW_CHUNK;
+                } else if (readChunk(pos)) {
+                    continue;
+                }
+                return null;
+            }
+
+            if (type == executionSample || type == nativeMethodSample) {
+                return new EventPair(JfrEventType.EXECUTION_SAMPLE, readExecutionSample());
+            } else if (type == allocationInNewTLAB) {
+                return new EventPair(JfrEventType.OBJECT_ALLOCATION_IN_NEW_TLAB, readAllocationSample(true));
+            } else if (type == allocationOutsideTLAB || type == allocationSample) {
+                return new EventPair(JfrEventType.OBJECT_ALLOCATION_OUTSIDE_TLAB, readAllocationSample(false));
+            } else if (type == liveObject) {
+                return new EventPair(JfrEventType.PROFILER_LIVE_OBJECT, readLiveObject());
+            } else if (type == monitorEnter) {
+                return new EventPair(JfrEventType.JAVA_MONITOR_ENTER, readContendedLock(false));
+            } else if (type == threadPark) {
+                return new EventPair(JfrEventType.THREAD_PARK, readContendedLock(true));
+            } else if (type == activeSetting) {
+                readActiveSetting();
+            }
+
+            seek(filePosition + pos + size);
+        }
+
+        state = STATE_EOF;
+        return null;
+    }
+
+    public EventPair readEventWithType1() throws IOException {
+        return new EventPair(JfrEventType.EXECUTION_SAMPLE, readEvent());
+    }
+
     private ExecutionSample readExecutionSample() {
         long time = getVarlong();
         int tid = getVarint();
         int stackTraceId = getVarint();
         int threadState = getVarint();
+        int contextId = getVarint();
         return new ExecutionSample(time, tid, stackTraceId, threadState);
     }
 
@@ -214,6 +268,7 @@ public class JfrReader implements Closeable {
         int classId = getVarint();
         long allocationSize = getVarlong();
         long tlabSize = tlab ? getVarlong() : 0;
+        int contextId = getVarint();
         return new AllocationSample(time, tid, stackTraceId, classId, allocationSize, tlabSize);
     }
 
@@ -236,6 +291,7 @@ public class JfrReader implements Closeable {
         if (hasTimeout) getVarlong();
         long until = getVarlong();
         long address = getVarlong();
+        if (!hasTimeout) getVarint();
         return new ContendedLock(time, tid, stackTraceId, duration, classId);
     }
 
